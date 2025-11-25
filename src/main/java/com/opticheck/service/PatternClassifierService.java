@@ -1,5 +1,6 @@
 package com.opticheck.service;
 
+import ai.djl.MalformedModelException;
 import ai.djl.Model;
 import ai.djl.modality.cv.Image;
 import ai.djl.modality.cv.ImageFactory;
@@ -8,6 +9,7 @@ import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
 import ai.djl.ndarray.types.DataType;
 import ai.djl.nn.Activation;
+import ai.djl.nn.Block;
 import ai.djl.nn.SequentialBlock;
 import ai.djl.nn.core.Linear;
 import ai.djl.training.ParameterStore;
@@ -19,6 +21,8 @@ import org.springframework.stereotype.Component;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.*;
 
 
@@ -54,6 +58,8 @@ public class PatternClassifierService {
     // ----------------------
     public void train(ArrayDataset dataset, int epochs) throws IOException, TranslateException {
         trainer.train(this.model,dataset,epochs);
+        Files.list(Paths.get("models")).forEach(p -> p.toFile().delete());
+        model.save(Paths.get("models"), "opticheck-model");
     }
 
     public List<FilePrediction> filePredictions() throws IOException, TranslateException {
@@ -248,5 +254,23 @@ public class PatternClassifierService {
     public NDManager getManager() {
         return manager;
     }
+
+    public void loadModel(int hiddenNodes, int outputClasses) throws IOException, MalformedModelException {
+        // Rebuild the SAME block used when training
+        SequentialBlock block = new SequentialBlock()
+                .add(Linear.builder().setUnits(hiddenNodes).build())
+                .add(Activation.reluBlock())
+                .add(Linear.builder().setUnits(outputClasses).build());
+
+        Model modelToLoad = Model.newInstance("opticheck-model");
+        modelToLoad.setBlock(block);
+
+        // Load the params file
+        modelToLoad.load(Paths.get("models"), "opticheck-model");
+
+        this.model = modelToLoad;
+
+    }
+
 }
 

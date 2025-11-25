@@ -1,5 +1,6 @@
 package com.opticheck.ui;
 
+import ai.djl.MalformedModelException;
 import ai.djl.ndarray.NDManager;
 import ai.djl.translate.TranslateException;
 import com.opticheck.interfaces.TrainingListenerUI;
@@ -25,7 +26,7 @@ import java.io.IOException;
 import com.opticheck.trainer.Trainer;
 
 @Route("")
-@Component
+//@Component
 public class MainView extends VerticalLayout implements TrainingListenerUI {
 
     @Autowired
@@ -37,15 +38,18 @@ public class MainView extends VerticalLayout implements TrainingListenerUI {
     private Div statusBox;
     private UI uiRef;   // ← store UI reference for background thread
 
+    private static final int HIDDEN_NEURONS = 254;
+    private static final int OUTPUT_CLASSES = 2;
+
     public MainView() {
 
-        add(new H2("OptiCheck — Industrial Defect Classifier"));
+        add(new H2("OptiCheck — Neural Network Classifier"));
 
         // -------------------------
         // Buttons
         // -------------------------
         Button trainButton = new Button("Train Model", e -> trainModel());
-        Button saveButton = new Button("Save Model", e -> saveModel());
+        Button saveButton = new Button("Load Model", e -> loadModel());
         Button predictButton = new Button("Test(Predict)");
 
         predictButton.addClickListener(event -> {
@@ -123,9 +127,9 @@ public class MainView extends VerticalLayout implements TrainingListenerUI {
 
             ArrayDataset dataset = ImageDatasetLoader.loadDataset("training-data", manager);
 
-            classifierService.createMLP(256, 2);
+            classifierService.createMLP(HIDDEN_NEURONS, OUTPUT_CLASSES);
 
-            classifierService.train(dataset, 90);
+            classifierService.train(dataset, 130);
 
         } catch (Exception ex) {
             ex.printStackTrace();
@@ -163,7 +167,7 @@ public class MainView extends VerticalLayout implements TrainingListenerUI {
         } else if (msg.toLowerCase().contains("loss")) {
             float lossValue = extractLoss(msg); // parse the number
             String color;
-            if (lossValue < 0.19f) {
+            if (lossValue < 0.29f) {
                 color = "green";
             } else if (lossValue < 0.60f) {
                 color = "orange";
@@ -232,12 +236,14 @@ public class MainView extends VerticalLayout implements TrainingListenerUI {
     }
 
 
-    private void saveModel() {
+    private void loadModel() {
         try {
-            classifierService.saveModel(new File("models"));
-            Notification.show("Model saved!");
+            classifierService.loadModel(HIDDEN_NEURONS, OUTPUT_CLASSES);
+            Notification.show("Model loaded!");
         } catch (IOException ex) {
             Notification.show("Failed to save model: " + ex.getMessage());
+        } catch (MalformedModelException e) {
+            throw new RuntimeException(e);
         }
     }
 }

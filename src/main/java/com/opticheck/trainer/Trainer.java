@@ -47,7 +47,7 @@ public class Trainer {
     public void train(Model model, ArrayDataset dataset, int epochs) throws IOException, TranslateException {
         Tracker lrTracker = Tracker.multiFactor()
                 .setBaseValue(0.001f)
-                .optFactor(0.5f)
+                .optFactor(0.2f)
                 .setSteps(new int[]{5, 10})
                 .build();
         Optimizer optimizer = Optimizer.adam()
