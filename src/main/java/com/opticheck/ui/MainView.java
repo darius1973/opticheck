@@ -1,0 +1,243 @@
+package com.opticheck.ui;
+
+import ai.djl.ndarray.NDManager;
+import ai.djl.translate.TranslateException;
+import com.opticheck.interfaces.TrainingListenerUI;
+import com.opticheck.pojo.FilePrediction;
+import com.opticheck.utils.ImageDatasetLoader;
+import com.opticheck.service.PatternClassifierService;
+import com.vaadin.flow.component.UI;
+import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.html.Div;
+import com.vaadin.flow.component.html.H2;
+import com.vaadin.flow.component.html.Image;
+import com.vaadin.flow.component.notification.Notification;
+import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
+import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.page.Push;
+import com.vaadin.flow.router.Route;
+import ai.djl.training.dataset.ArrayDataset;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+import java.io.File;
+import java.io.IOException;
+import com.opticheck.trainer.Trainer;
+
+@Route("")
+@Component
+public class MainView extends VerticalLayout implements TrainingListenerUI {
+
+    @Autowired
+    private Trainer trainer;
+
+    @Autowired
+    private PatternClassifierService classifierService;
+
+    private Div statusBox;
+    private UI uiRef;   // ← store UI reference for background thread
+
+    public MainView() {
+
+        add(new H2("OptiCheck — Industrial Defect Classifier"));
+
+        // -------------------------
+        // Buttons
+        // -------------------------
+        Button trainButton = new Button("Train Model", e -> trainModel());
+        Button saveButton = new Button("Save Model", e -> saveModel());
+        Button predictButton = new Button("Test(Predict)");
+
+        predictButton.addClickListener(event -> {
+            try {
+                var filePredictions = classifierService.filePredictions();
+                for (FilePrediction fp : filePredictions) {
+                    String message = fp.prediction() == 0
+                            ? "Image file " + fp.fileName() + " Pattern is RIGHT ✅"
+                            : "Image file " + fp.fileName() + " Pattern is WRONG ❌";
+                    Notification.show(message, 7000, Notification.Position.TOP_CENTER);
+                }
+
+            } catch (Exception e2) {
+                Notification.show(
+                        "Prediction failed: " + e2.getMessage(),
+                        5000,
+                        Notification.Position.TOP_CENTER
+                );
+            }
+        });
+
+        HorizontalLayout buttonRow = new HorizontalLayout(trainButton, saveButton, predictButton);
+        buttonRow.setSpacing(true);
+        buttonRow.setPadding(true);
+
+        add(buttonRow);
+
+        // -------------------------
+        // Status Box (Console)
+        // -------------------------
+        statusBox = new Div();
+        statusBox.setId("statusBox");
+        statusBox.getStyle().set("border", "1px solid #ccc");
+        statusBox.getStyle().set("padding", "10px");
+        statusBox.getStyle().set("width", "600px");
+        statusBox.getStyle().set("height", "600px");
+        statusBox.getStyle().set("overflow-y", "auto");
+        statusBox.getStyle().set("white-space", "pre-wrap");
+
+        // GIF
+        Image aiGif = new Image("frontend/images/anim.gif", "AI Face Animation");
+        aiGif.setWidth("600px");
+        aiGif.setHeight("600px");
+
+        // Place console + GIF horizontally
+        HorizontalLayout contentRow = new HorizontalLayout(statusBox, aiGif);
+        contentRow.setAlignItems(Alignment.START);
+
+        add(contentRow);
+    }
+
+    // ------------------------------------------------------------
+    // START TRAINING
+    // ------------------------------------------------------------
+    private void trainModel() {
+        uiRef = UI.getCurrent();   // IMPORTANT: capture UI before thread starts
+
+        statusBox.setText("Training started...\n");
+
+        trainer.setUiLogger(this);
+
+        // Run in background so UI stays responsive
+        new Thread(() -> {
+            uiRef.access(() -> appendMessage("Training thread started...", false));
+
+            executeTraining();
+
+            uiRef.access(() -> appendMessage("Training FINISHED ✔", false));
+        }).start();
+    }
+
+    private void executeTraining() {
+        try {
+            NDManager manager = classifierService.getManager();
+
+            ArrayDataset dataset = ImageDatasetLoader.loadDataset("training-data", manager);
+
+            classifierService.createMLP(256, 2);
+
+            classifierService.train(dataset, 90);
+
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            if (uiRef != null) {
+                uiRef.access(() -> appendMessage("ERROR: " + ex.getMessage(), true));
+            }
+        }
+    }
+
+    // ------------------------------------------------------------
+    // TRAINER CALLBACKS
+    // ------------------------------------------------------------
+    @Override
+    public void onLog(String message) {
+        if (uiRef != null) {
+            uiRef.access(() -> appendMessage(message, false));
+        }
+    }
+
+    @Override
+    public void onError(String message) {
+        if (uiRef != null) {
+            uiRef.access(() -> appendMessage(message, true));
+        }
+    }
+
+    // ------------------------------------------------------------
+    // UI LOGGING
+    // ------------------------------------------------------------
+    private void appendMessage(String msg, boolean error) {
+        String coloredMsg = "";
+
+        if (error) {
+            coloredMsg = "<span style='color:red;'>" + escapeHtml(msg) + "</span>";
+        } else if (msg.toLowerCase().contains("loss")) {
+            float lossValue = extractLoss(msg); // parse the number
+            String color;
+            if (lossValue < 0.19f) {
+                color = "green";
+            } else if (lossValue < 0.60f) {
+                color = "orange";
+            } else {
+                color = "red";
+            }
+            coloredMsg = "<span style='color:" + color + ";'>" + escapeHtml(msg) + "</span>";
+        } else {
+            coloredMsg = "<span style='color:black;'>" + escapeHtml(msg) + "</span>";
+        }
+
+        // Append HTML instead of plain text
+        statusBox.getElement().setProperty("innerHTML",
+                statusBox.getElement().getProperty("innerHTML") + coloredMsg + "<br>");
+
+        // Auto scroll
+        UI.getCurrent().getPage().executeJs(
+                "var el=document.getElementById('statusBox'); el.scrollTop=el.scrollHeight;");
+    }
+
+    // Helper to escape any special HTML chars in messages
+    private String escapeHtml(String s) {
+        return s.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;");
+    }
+
+    private void appendMessagePrev(String msg, boolean error) {
+        if (error) {
+            statusBox.getStyle().set("color", "red");
+        } else {
+            if (msg.toLowerCase().contains("loss")) {
+                float lossValue = extractLoss(msg); // parse the number from the message
+                if (lossValue < 0.19f) {
+                    statusBox.getStyle().set("color", "green");
+                } else if (lossValue < 0.60f) {
+                    statusBox.getStyle().set("color", "orange");
+                } else if (lossValue < 1.0f){
+                    statusBox.getStyle().set("color", "pink");
+                } else {
+                    statusBox.getStyle().set("color", "red");
+                }
+            } else {
+                statusBox.getStyle().set("color", "black");
+            }
+        }
+
+        statusBox.setText(statusBox.getText() + msg + "\n");
+
+        // Auto scroll
+        UI.getCurrent().getPage().executeJs(
+                "var el=document.getElementById('statusBox'); el.scrollTop=el.scrollHeight;");
+    }
+
+    private float extractLoss(String msg) {
+        try {
+            // Look for the first number in the string
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("([0-9]*\\.?[0-9]+)").matcher(msg);
+            if (m.find()) {
+                return Float.parseFloat(m.group(1));
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return -1f; // invalid number
+    }
+
+
+    private void saveModel() {
+        try {
+            classifierService.saveModel(new File("models"));
+            Notification.show("Model saved!");
+        } catch (IOException ex) {
+            Notification.show("Failed to save model: " + ex.getMessage());
+        }
+    }
+}

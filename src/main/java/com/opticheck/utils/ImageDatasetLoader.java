@@ -35,7 +35,8 @@ public class ImageDatasetLoader {
         return new ArrayDataset.Builder()
                 .setData(X)
                 .optLabels(y)
-                .setSampling(16, true)
+                //training set has in total 400 images -> nr of batches = 400/32 = 13
+                .setSampling(32, true)
                 .build();
     }
 
