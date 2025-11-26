@@ -258,6 +258,15 @@ public class PatternClassifierService {
     public void loadModel(int hiddenNodes, int outputClasses) throws IOException, MalformedModelException {
         // Rebuild the SAME block used when training
         SequentialBlock block = new SequentialBlock()
+                // within Linear, the default weights and bias-ses are initialized as follows:
+                // bias = 0
+                // weights (Xavier formula)
+                // w∼U(−limit,limit)  , where limit = SQRT (6/(fan_in + fan_out))
+                // U meaning random distribution
+                // fan_in = number of input units to the layer,
+                // fan_out = number of output units from the layer
+                // If weights are too large, activations explode layer-to-layer; if too small, they vanish.
+                // To prevent this  - we initialize with Xavier formula.
                 .add(Linear.builder().setUnits(hiddenNodes).build())
                 .add(Activation.reluBlock())
                 .add(Linear.builder().setUnits(outputClasses).build());

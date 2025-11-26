@@ -57,8 +57,8 @@ public class MainView extends VerticalLayout implements TrainingListenerUI {
                 var filePredictions = classifierService.filePredictions();
                 for (FilePrediction fp : filePredictions) {
                     String message = fp.prediction() == 0
-                            ? "Image file " + fp.fileName() + " Pattern is RIGHT ✅"
-                            : "Image file " + fp.fileName() + " Pattern is WRONG ❌";
+                            ? "Image file " + fp.fileName() + " Pattern is RIGHT - cypher 1 IN ✅"
+                            : "Image file " + fp.fileName() + " Pattern is WRONG - NO cypher 1 ❌";
                     Notification.show(message, 7000, Notification.Position.TOP_CENTER);
                 }
 
@@ -84,14 +84,14 @@ public class MainView extends VerticalLayout implements TrainingListenerUI {
         statusBox.setId("statusBox");
         statusBox.getStyle().set("border", "1px solid #ccc");
         statusBox.getStyle().set("padding", "10px");
-        statusBox.getStyle().set("width", "600px");
+        statusBox.getStyle().set("width", "300px");
         statusBox.getStyle().set("height", "600px");
         statusBox.getStyle().set("overflow-y", "auto");
         statusBox.getStyle().set("white-space", "pre-wrap");
 
         // GIF
         Image aiGif = new Image("frontend/images/anim.gif", "AI Face Animation");
-        aiGif.setWidth("600px");
+        aiGif.setWidth("800px");
         aiGif.setHeight("600px");
 
         // Place console + GIF horizontally
