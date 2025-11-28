@@ -22,10 +22,10 @@ public class DJLConfigComponent {
         System.setProperty("ai.djl.pytorch.enable_graph_executor", "true");
 
         // 3️⃣ Verify engine and device
-        Engine engine = Engine.getEngine("PyTorch");
+        var engine = Engine.getEngine("PyTorch");
         System.out.println("Engine: " + engine.getEngineName());
 
-        Device device = Device.cpu(); // change to Device.gpu() if you have GPU
+        var device = Device.cpu(); // change to Device.gpu() if you have GPU
         manager = NDManager.newBaseManager(device);
 
         System.out.println("DJL PyTorch configured for faster CPU training.");

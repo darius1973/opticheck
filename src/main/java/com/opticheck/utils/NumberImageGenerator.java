@@ -20,18 +20,18 @@ public class NumberImageGenerator {
         notOkFolder.mkdirs();
 
         for (int i = 0; i < count; i++) {
-            BufferedImage okImg = generateRealisticNumberImage("1", true);
+            var okImg = generateRealisticNumberImage("1", true);
             ImageIO.write(okImg, "jpg", new File(okFolder, "ok_" + i + ".jpg"));
 
             int wrongDigit = 2 + rnd.nextInt(8); // 2…9
-            BufferedImage notOkImg = generateRealisticNumberImage(String.valueOf(wrongDigit), false);
+            var notOkImg = generateRealisticNumberImage(String.valueOf(wrongDigit), false);
             ImageIO.write(notOkImg, "jpg", new File(notOkFolder, "notok_" + i + ".jpg"));
         }
     }
 
     private static BufferedImage generateRealisticNumberImage(String digit, boolean ok) {
-        BufferedImage img = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
-        Graphics2D g = img.createGraphics();
+        var img = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
+        var g = img.createGraphics();
 
         // Background variation
         int bg = 230 + rnd.nextInt(25);
@@ -45,7 +45,7 @@ public class NumberImageGenerator {
 
         // Random rotation
         double angle = Math.toRadians(rnd.nextInt(30) - 15);
-        AffineTransform old = g.getTransform();
+        var old = g.getTransform();
         g.rotate(angle, WIDTH / 2.0, HEIGHT / 2.0);
 
         // Random placement (center-ish)
@@ -68,8 +68,8 @@ public class NumberImageGenerator {
     }
 
     public static void main(String[] args) throws Exception {
-        File ok = new File("training-data/ok");
-        File notok = new File("training-data/notok");
+        var ok = new File("training-data/ok");
+        var notok = new File("training-data/notok");
 
         generateDataset(ok, notok, 200); // 200 OK and 200 NOT OK
         System.out.println("Dataset generated.");

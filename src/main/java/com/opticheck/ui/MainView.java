@@ -48,9 +48,9 @@ public class MainView extends VerticalLayout implements TrainingListenerUI {
         // -------------------------
         // Buttons
         // -------------------------
-        Button trainButton = new Button("Train Model", e -> trainModel());
-        Button saveButton = new Button("Load Model", e -> loadModel());
-        Button predictButton = new Button("Test(Predict)");
+        var trainButton = new Button("Train Model", e -> trainModel());
+        var saveButton = new Button("Load Model", e -> loadModel());
+        var predictButton = new Button("Test(Predict)");
 
         predictButton.addClickListener(event -> {
             try {
@@ -71,7 +71,7 @@ public class MainView extends VerticalLayout implements TrainingListenerUI {
             }
         });
 
-        HorizontalLayout buttonRow = new HorizontalLayout(trainButton, saveButton, predictButton);
+        var buttonRow = new HorizontalLayout(trainButton, saveButton, predictButton);
         buttonRow.setSpacing(true);
         buttonRow.setPadding(true);
 
@@ -90,12 +90,12 @@ public class MainView extends VerticalLayout implements TrainingListenerUI {
         statusBox.getStyle().set("white-space", "pre-wrap");
 
         // GIF
-        Image aiGif = new Image("frontend/images/anim.gif", "AI Face Animation");
+        var aiGif = new Image("frontend/images/anim.gif", "AI Face Animation");
         aiGif.setWidth("800px");
         aiGif.setHeight("600px");
 
         // Place console + GIF horizontally
-        HorizontalLayout contentRow = new HorizontalLayout(statusBox, aiGif);
+        var contentRow = new HorizontalLayout(statusBox, aiGif);
         contentRow.setAlignItems(Alignment.START);
 
         add(contentRow);
@@ -123,9 +123,9 @@ public class MainView extends VerticalLayout implements TrainingListenerUI {
 
     private void executeTraining() {
         try {
-            NDManager manager = classifierService.getManager();
+            var manager = classifierService.getManager();
 
-            ArrayDataset dataset = ImageDatasetLoader.loadDataset("training-data", manager);
+            var dataset = ImageDatasetLoader.loadDataset("training-data", manager);
 
             classifierService.createMLP(HIDDEN_NEURONS, OUTPUT_CLASSES);
 

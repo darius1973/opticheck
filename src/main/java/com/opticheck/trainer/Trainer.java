@@ -45,17 +45,17 @@ public class Trainer {
     // TRAINING
     // ----------------------
     public void train(Model model, ArrayDataset dataset, int epochs) throws IOException, TranslateException {
-        Tracker lrTracker = Tracker.multiFactor()
+        var lrTracker = Tracker.multiFactor()
                 .setBaseValue(0.001f)
                 .optFactor(0.2f)
                 .setSteps(new int[]{5, 10})
                 .build();
-        Optimizer optimizer = Optimizer.adam()
+        var optimizer = Optimizer.adam()
                 .optLearningRateTracker(lrTracker)
                 .optWeightDecays(1e-5f)
                 .build();
 
-        DefaultTrainingConfig config = new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss())
+        var config = new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss())
                 .optOptimizer(optimizer)
                 .addEvaluator(new Accuracy());
 

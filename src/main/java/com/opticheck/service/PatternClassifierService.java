@@ -64,7 +64,7 @@ public class PatternClassifierService {
 
     public List<FilePrediction> filePredictions() throws IOException, TranslateException {
         List<FilePrediction> filePredictions = new ArrayList<>();
-        File predictDir = new File("predict");
+        var predictDir = new File("predict");
         if(Arrays.stream(Objects.requireNonNull(predictDir.listFiles())).toList().isEmpty()) {
             throw new IOException("No file found in predict folder");
         }
@@ -84,17 +84,17 @@ public class PatternClassifierService {
         float[] input = loadImageAsFloatArray(imageFile);
 
         // Use the service's long-living NDManager
-        NDManager manager = getManager();
+        var manager = getManager();
 
-        NDArray array = manager.create(input).reshape(1, input.length); // shape [1, 64*64*3]
-        NDList inputList = new NDList(array);
+        var array = manager.create(input).reshape(1, input.length); // shape [1, 64*64*3]
+        var inputList = new NDList(array);
 
         // Forward pass through model
-        ParameterStore ps = new ParameterStore(manager, false);
-        NDList output = model.getBlock().forward(ps, inputList, false, null);
+        var ps = new ParameterStore(manager, false);
+        var output = model.getBlock().forward(ps, inputList, false, null);
 
         // Get prediction: cast to INT32 before argMax to fix mismatch
-        NDArray result = output.singletonOrThrow();
+        var result = output.singletonOrThrow();
         int predictedClass = (int) result.argMax().getLong();
         return new FilePrediction(imageFile.getName(), predictedClass); // argMax along class dimension, returns int
     }
@@ -105,11 +105,11 @@ public class PatternClassifierService {
     // ----------------------
     private float[] loadImageAsFloatArray(File file) throws IOException {
 
-        try (NDManager m = NDManager.newBaseManager()) {
+        try (var m = NDManager.newBaseManager()) {
 
-            Image img = ImageFactory.getInstance().fromFile(file.toPath());
-
-            img = img.resize(64, 64,false); // IMPORTANT FIX
+            var img = ImageFactory.getInstance().fromFile(file.toPath());
+            // IMPORTANT FIX  - resize image to 64 X 64 pixels, no copy
+            img = img.resize(64, 64,false);
 
             /*
              * ===========================================================================
@@ -241,11 +241,6 @@ public class PatternClassifierService {
         }
     }
 
-
-    public void saveModel(File dir) throws IOException {
-        model.save(dir.toPath(), "opticheck-model");
-    }
-
     public Model getModel() {
         return model;
     }
@@ -257,7 +252,7 @@ public class PatternClassifierService {
 
     public void loadModel(int hiddenNodes, int outputClasses) throws IOException, MalformedModelException {
         // Rebuild the SAME block used when training
-        SequentialBlock block = new SequentialBlock()
+        var block = new SequentialBlock()
                 // within Linear, the default weights and bias-ses are initialized as follows:
                 // bias = 0
                 // weights (Xavier formula)
@@ -271,7 +266,7 @@ public class PatternClassifierService {
                 .add(Activation.reluBlock())
                 .add(Linear.builder().setUnits(outputClasses).build());
 
-        Model modelToLoad = Model.newInstance("opticheck-model");
+        var modelToLoad = Model.newInstance("opticheck-model");
         modelToLoad.setBlock(block);
 
         // Load the params file
