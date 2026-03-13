@@ -1,8 +1,6 @@
 package com.opticheck.ui;
 
 import ai.djl.MalformedModelException;
-import ai.djl.ndarray.NDManager;
-import ai.djl.translate.TranslateException;
 import com.opticheck.interfaces.TrainingListenerUI;
 import com.opticheck.pojo.FilePrediction;
 import com.opticheck.utils.ImageDatasetLoader;
@@ -15,22 +13,18 @@ import com.vaadin.flow.component.html.Image;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-import com.vaadin.flow.component.page.Push;
 import com.vaadin.flow.router.Route;
-import ai.djl.training.dataset.ArrayDataset;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 
-import java.io.File;
 import java.io.IOException;
-import com.opticheck.trainer.Trainer;
+import com.opticheck.trainer.CNNTrainer;
 
 @Route("")
 //@Component
 public class MainView extends VerticalLayout implements TrainingListenerUI {
 
     @Autowired
-    private Trainer trainer;
+    private CNNTrainer trainer;
 
     @Autowired
     private PatternClassifierService classifierService;
@@ -38,7 +32,10 @@ public class MainView extends VerticalLayout implements TrainingListenerUI {
     private Div statusBox;
     private UI uiRef;   // ← store UI reference for background thread
 
-    private static final int HIDDEN_NEURONS = 254;
+    //convoluted neural net
+    private static final int FIRST_CONV_FILTERS = 16;
+    private static final int SECOND_CONV_FILTERS = 32;
+    private static final int DENSE_NEURONS = 64;
     private static final int OUTPUT_CLASSES = 2;
 
     public MainView() {
@@ -126,10 +123,8 @@ public class MainView extends VerticalLayout implements TrainingListenerUI {
             var manager = classifierService.getManager();
 
             var dataset = ImageDatasetLoader.loadDataset("training-data", manager);
-
-            classifierService.createMLP(HIDDEN_NEURONS, OUTPUT_CLASSES);
-
-            classifierService.train(dataset, 130);
+            classifierService.createCnnModel( FIRST_CONV_FILTERS, SECOND_CONV_FILTERS, DENSE_NEURONS, OUTPUT_CLASSES);
+            classifierService.train(dataset, 140);
 
         } catch (Exception ex) {
             ex.printStackTrace();
@@ -238,7 +233,7 @@ public class MainView extends VerticalLayout implements TrainingListenerUI {
 
     private void loadModel() {
         try {
-            classifierService.loadModel(HIDDEN_NEURONS, OUTPUT_CLASSES);
+            classifierService.loadModel(FIRST_CONV_FILTERS, SECOND_CONV_FILTERS, DENSE_NEURONS, OUTPUT_CLASSES);
             Notification.show("Model loaded!");
         } catch (IOException ex) {
             Notification.show("Failed to save model: " + ex.getMessage());

@@ -1,5 +1,6 @@
 package com.opticheck.trainer;
 
+
 import ai.djl.Model;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
@@ -22,10 +23,10 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 
 @Component
-public class Trainer {
+public class CNNTrainer {
 
-    private static final int INPUT_SIZE = 64 * 64 * 3;
-
+    private static final int IMAGE_SIZE = 64;
+    private static final int CHANNELS = 3;
 
     private TrainingListenerUI uiLogger;
 
@@ -44,49 +45,65 @@ public class Trainer {
     // ----------------------
     // TRAINING
     // ----------------------
-    public void train(Model model, ArrayDataset dataset, int epochs) throws IOException, TranslateException {
+    public void train(Model model, ArrayDataset dataset, int epochs)
+            throws IOException, TranslateException {
+
+        // Learning rate schedule
         var lrTracker = Tracker.multiFactor()
-                .setBaseValue(0.001f)
-                .optFactor(0.2f)
-                .setSteps(new int[]{5, 10})
+                .setBaseValue(0.001f)      // starting learning rate
+                .optFactor(0.2f)           // multiply LR by 0.2 at steps
+                .setSteps(new int[]{5,10}) // epochs where LR drops
                 .build();
+
+        // Adam optimizer (adaptive gradient descent)
         var optimizer = Optimizer.adam()
                 .optLearningRateTracker(lrTracker)
-                .optWeightDecays(1e-5f)
+                .optWeightDecays(1e-5f) // L2 regularization
                 .build();
 
         var config = new DefaultTrainingConfig(Loss.softmaxCrossEntropyLoss())
                 .optOptimizer(optimizer)
-                .addEvaluator(new Accuracy());
+                .addEvaluator(new Accuracy())
+                .addTrainingListeners(TrainingListener.Defaults.logging());
 
         try (ai.djl.training.Trainer trainer = model.newTrainer(config)) {
 
-            trainer.initialize(new Shape(1, INPUT_SIZE));
+            // CNN input shape
+            trainer.initialize(new Shape(1, CHANNELS, IMAGE_SIZE, IMAGE_SIZE));
 
             for (int epoch = 0; epoch < epochs; epoch++) {
+
                 log("▶ Starting epoch " + epoch);
+
                 for (Batch batch : trainer.iterateDataset(dataset)) {
 
                     try (GradientCollector gc = trainer.newGradientCollector()) {
 
                         NDArray data = batch.getData().head();
-                        NDArray label = batch.getLabels().head().toType(DataType.INT32, false);
+                        NDArray label = batch.getLabels().head()
+                                .toType(DataType.INT32, false);
 
-                        // forward() uses model block
-                        NDArray pred = trainer.forward(new NDList(data)).singletonOrThrow();
+                        // Forward pass
+                        NDArray pred =
+                                trainer.forward(new NDList(data)).singletonOrThrow();
 
-                        NDArray loss = trainer.getLoss().evaluate(new NDList(label), new NDList(pred));
+                        // Compute loss
+                        NDArray loss = trainer.getLoss()
+                                .evaluate(new NDList(label), new NDList(pred));
+
                         log("   • Loss: " + loss.getFloat());
-                        System.out.println("Loss: " + loss.getFloat());
+
+                        // Backpropagation
                         gc.backward(loss);
                     }
 
+                    // Update weights
                     trainer.step();
+
                     batch.close();
                 }
 
                 log("✔ Epoch " + epoch + " complete\n");
-                System.out.println("✔ Epoch " + epoch + " complete\n");
             }
         }
     }
