@@ -36,6 +36,8 @@ import com.opticheck.pojo.FilePrediction;
 
 import javax.imageio.ImageIO;
 
+import static com.opticheck.utils.ImageDatasetLoader.loadImageAsTensor;
+
 @Component
 public class PatternClassifierService {
     private final NDManager manager;
@@ -47,7 +49,7 @@ public class PatternClassifierService {
         this.trainer = trainer;
     }
 
-    public Model createCnnModel(
+    public void createCnnModel(
             int conv1Filters,
             int conv2Filters,
             int denseUnits,
@@ -85,8 +87,7 @@ public class PatternClassifierService {
                 .add(Linear.builder().setUnits(outputClasses).build());
 
         model.setBlock(block);
-
-        return model;
+        this.model = model;
     }
 
     // ----------------------
@@ -126,32 +127,7 @@ public class PatternClassifierService {
         return new FilePrediction(imageFile.getName(), predictedClass);
     }
 
-    private float[][][] loadImageAsTensor(File file) throws IOException {
 
-        BufferedImage img = ImageIO.read(file);
-
-        BufferedImage resized =
-                new BufferedImage(64, 64, BufferedImage.TYPE_INT_RGB);
-
-        Graphics2D g = resized.createGraphics();
-        g.drawImage(img, 0, 0, 64, 64, null);
-        g.dispose();
-
-        float[][][] data = new float[3][64][64];
-
-        for (int y = 0; y < 64; y++) {
-            for (int x = 0; x < 64; x++) {
-
-                int rgb = resized.getRGB(x, y);
-
-                data[0][y][x] = ((rgb >> 16) & 0xff) / 255f;
-                data[1][y][x] = ((rgb >> 8) & 0xff) / 255f;
-                data[2][y][x] = (rgb & 0xff) / 255f;
-            }
-        }
-
-        return data;
-    }
 
     private int cnnPredict(Model model, float[][][] image) {
 
@@ -167,9 +143,9 @@ public class PatternClassifierService {
             NDList output = model.getBlock()
                     .forward(ps, new NDList(input), false);
 
-            return output.singletonOrThrow()
+            return (int) output.singletonOrThrow()
                     .argMax()
-                    .getInt(); // 0=OK, 1=NOK
+                    .getLong(); // 0=OK, 1=NOK
         }
     }
 
@@ -200,19 +176,38 @@ public class PatternClassifierService {
         return manager;
     }
 
-    public void loadModel(int conv1Filters,
-                          int conv2Filters,
-                          int denseUnits,
-                          int outputClasses)
-            throws IOException, MalformedModelException {
+    public void loadModel(int firstConvFilters, int secondConvFilters, int denseNeurons, int outputClasses) throws IOException, MalformedModelException {
 
-        Model modelToLoad = createCnnModel(
-                conv1Filters,
-                conv2Filters,
-                denseUnits,
-                outputClasses
-        );
+        Model modelToLoad = Model.newInstance("opticheck-cnn");
 
+        // Rebuild SAME CNN architecture used during training
+        SequentialBlock block = new SequentialBlock();
+
+        block
+                .add(Conv2d.builder()
+                        .setFilters(firstConvFilters)
+                        .setKernelShape(new Shape(3, 3))
+                        .optPadding(new Shape(1, 1))
+                        .build())
+                .add(Activation.reluBlock())
+                .add(Pool.maxPool2dBlock(new Shape(2, 2)))
+
+                .add(Conv2d.builder()
+                        .setFilters(secondConvFilters)
+                        .setKernelShape(new Shape(3, 3))
+                        .optPadding(new Shape(1, 1))
+                        .build())
+                .add(Activation.reluBlock())
+                .add(Pool.maxPool2dBlock(new Shape(2, 2)))
+
+                .add(Blocks.batchFlattenBlock())
+                .add(Linear.builder().setUnits(denseNeurons).build())
+                .add(Activation.reluBlock())
+                .add(Linear.builder().setUnits(outputClasses).build());
+
+        modelToLoad.setBlock(block);
+
+        // Load weights from file
         modelToLoad.load(Paths.get("models"), "opticheck-cnn");
 
         this.model = modelToLoad;

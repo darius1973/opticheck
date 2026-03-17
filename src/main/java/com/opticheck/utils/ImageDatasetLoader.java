@@ -6,10 +6,12 @@ import ai.djl.ndarray.NDManager;
 import ai.djl.training.dataset.ArrayDataset;
 
 import javax.imageio.ImageIO;
+import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
+import java.util.List;
 
 public class ImageDatasetLoader {
 
@@ -17,49 +19,96 @@ public class ImageDatasetLoader {
     private static final int HEIGHT = 64;
 
     public static ArrayDataset loadDataset(String baseDir, NDManager manager) throws IOException {
-        List<float[]> dataList = new ArrayList<>();
+
+        List<float[][][]> dataList = new ArrayList<>();
         List<Integer> labelList = new ArrayList<>();
 
-        File acceptedDir = new File(baseDir, "ok");
-        File defectDir = new File(baseDir, "notok");
+        File okDir = new File(baseDir, "ok");
+        File nokDir = new File(baseDir, "notok");
 
-        loadImagesFromDir(acceptedDir, 0, dataList, labelList);
-        loadImagesFromDir(defectDir, 1, dataList, labelList);
+        loadImagesFromDir(okDir, 0, dataList, labelList);
+        loadImagesFromDir(nokDir, 1, dataList, labelList);
 
-        float[][] data = dataList.toArray(new float[0][]);
+        // Convert list → 4D array
+        float[][][][] data = dataList.toArray(new float[0][][][]);
         int[] labels = labelList.stream().mapToInt(i -> i).toArray();
 
-        NDArray X = manager.create(data);
-        NDArray y = manager.create(labels);
+        int N = dataList.size();
+
+        float[] flat = new float[N * 3 * 64 * 64];
+
+        int idx = 0;
+
+        for (float[][][] img : dataList) {
+            for (int c = 0; c < 3; c++) {
+                for (int y = 0; y < 64; y++) {
+                    for (int x = 0; x < 64; x++) {
+                        flat[idx++] = img[c][y][x];
+                    }
+                }
+            }
+        }
+
+        // Create NDArray and reshape to CNN format
+        NDArray X = manager.create(flat)
+                .reshape(N, 3, 64, 64);
+
+        NDArray y = manager.create(labels); // shape (N)
 
         return new ArrayDataset.Builder()
                 .setData(X)
                 .optLabels(y)
-                //training set has in total 400 images -> nr of batches = 400/32 = 13
-                .setSampling(32, true)
+                .setSampling(32,
+true)
                 .build();
     }
 
-    private static void loadImagesFromDir(File dir, int label,
-                                          List<float[]> dataList, List<Integer> labelList) throws IOException {
-        if (!dir.exists()) return;
-        for (File file : Objects.requireNonNull(dir.listFiles((d, n) -> n.endsWith(".jpg") || n.endsWith(".png")))) {
-            BufferedImage img = ImageIO.read(file);
-            BufferedImage resized = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
-            resized.getGraphics().drawImage(img, 0, 0, WIDTH, HEIGHT, null);
+    private static void loadImagesFromDir(File dir,
+                                          int label,
+                                          List<float[][][]> dataList,
+                                          List<Integer> labelList) throws IOException {
 
-            float[] pixels = new float[WIDTH * HEIGHT * 3];
-            int idx = 0;
-            for (int y = 0; y < HEIGHT; y++) {
-                for (int x = 0; x < WIDTH; x++) {
-                    int rgb = resized.getRGB(x, y);
-                    pixels[idx++] = ((rgb >> 16) & 0xFF) / 255f;
-                    pixels[idx++] = ((rgb >> 8) & 0xFF) / 255f;
-                    pixels[idx++] = (rgb & 0xFF) / 255f;
-                }
-            }
-            dataList.add(pixels);
+        for (File file : dir.listFiles()) {
+
+            if (!file.getName().endsWith(".jpg") && !file.getName().endsWith(".png"))
+                continue;
+
+            float[][][] image = loadImageAsTensor(file); // 👈 IMPORTANT
+
+            dataList.add(image);
             labelList.add(label);
         }
+    }
+
+    public static float[][][] loadImageAsTensor(File file) throws IOException {
+
+        BufferedImage img = ImageIO.read(file);
+
+        // Resize to 64x64
+        BufferedImage resized = new BufferedImage(64, 64, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = resized.createGraphics();
+        g.drawImage(img, 0, 0, 64, 64, null);
+        g.dispose();
+
+        // [channels][height][width]
+        float[][][] data = new float[3][64][64];
+
+        for (int y = 0; y < 64; y++) {
+            for (int x = 0; x < 64; x++) {
+
+                int rgb = resized.getRGB(x, y);
+
+                // Extract RGB channels and normalize to [0,1]
+                float r = ((rgb >> 16) & 0xFF) / 255f;
+                float gC = ((rgb >> 8) & 0xFF) / 255f;
+                float b = (rgb & 0xFF) / 255f;
+
+                data[0][y][x] = r;   // Red channel
+                data[1][y][x] = gC;  // Green channel
+                data[2][y][x] = b;   // Blue channel
+            }
+        }
+
+        return data;
     }
 }

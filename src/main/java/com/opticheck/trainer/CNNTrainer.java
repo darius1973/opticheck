@@ -55,7 +55,28 @@ public class CNNTrainer {
                 .setSteps(new int[]{5,10}) // epochs where LR drops
                 .build();
 
-        // Adam optimizer (adaptive gradient descent)
+
+        /*
+           Adam optimizer (adaptive gradient descent)
+           Adam adjusts the learning rate for each parameter individually based on the history of gradients.
+           Instead of using just the current gradient, Adam keeps track of:
+           First moment (mean of gradients) → like momentum
+           Second moment (uncentered variance of gradients) → controls step size
+           This helps training be:
+                       - faster
+                       - more stable
+                       - less sensitive to learning-rate tuning
+           Adam combines two powerful ideas:
+            - Momentum
+              Uses past gradients to smooth updates.
+              Without momentum:  update = gradient
+              With momentum:  update = running_average(gradients)
+           - Adaptive Learning Rate
+              Large gradients → smaller steps
+              Small gradients → larger steps
+              So parameters with noisy gradients automatically get smaller learning rates.
+           Adam = Momentum + RMSProp + Bias Correction
+         */
         var optimizer = Optimizer.adam()
                 .optLearningRateTracker(lrTracker)
                 .optWeightDecays(1e-5f) // L2 regularization
