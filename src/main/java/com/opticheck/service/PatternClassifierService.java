@@ -96,7 +96,7 @@ public class PatternClassifierService {
     public void train(ArrayDataset dataset, int epochs) throws IOException, TranslateException {
         trainer.train(this.model,dataset,epochs);
         Files.list(Paths.get("models")).forEach(p -> p.toFile().delete());
-        model.save(Paths.get("models"), "opticheck-model");
+        model.save(Paths.get("models"), "opticheck-cnn");
     }
 
 
