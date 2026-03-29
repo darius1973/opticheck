@@ -2,6 +2,7 @@ package com.opticheck.utils;
 
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.util.Base64;
 import javax.imageio.ImageIO;
@@ -28,6 +29,15 @@ public class ImageUtils {
             // Return as a data URL
             return "data:image/png;base64," + base64;
         }
+    }
+
+    public static boolean isImageFile(File file) {
+        String name = file.getName().toLowerCase();
+        return file.isFile() &&
+                !name.startsWith(".") &&
+                (name.endsWith(".jpg") ||
+                        name.endsWith(".jpeg") ||
+                        name.endsWith(".png"));
     }
 }
 

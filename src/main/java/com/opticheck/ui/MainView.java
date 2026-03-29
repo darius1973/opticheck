@@ -54,8 +54,8 @@ public class MainView extends VerticalLayout implements TrainingListenerUI {
                 var filePredictions = classifierService.filePredictions();
                 for (FilePrediction fp : filePredictions) {
                     String message = fp.prediction() == 0
-                            ? "Image file " + fp.fileName() + " Pattern is RIGHT - cypher 1 IN ✅"
-                            : "Image file " + fp.fileName() + " Pattern is WRONG - NO cypher 1 ❌";
+                            ? "Image file " + fp.fileName() + " Pattern is RIGHT - cat IN ✅"
+                            : "Image file " + fp.fileName() + " Pattern is WRONG - NO cat in ❌";
                     Notification.show(message, 7000, Notification.Position.TOP_CENTER);
                 }
 
@@ -124,7 +124,7 @@ public class MainView extends VerticalLayout implements TrainingListenerUI {
 
             var dataset = ImageDatasetLoader.loadDataset("training-data", manager);
             classifierService.createCnnModel( FIRST_CONV_FILTERS, SECOND_CONV_FILTERS, DENSE_NEURONS, OUTPUT_CLASSES);
-            classifierService.train(dataset, 140);
+            classifierService.train(dataset, 200);
 
         } catch (Exception ex) {
             ex.printStackTrace();

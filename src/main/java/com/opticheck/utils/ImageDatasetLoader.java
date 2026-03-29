@@ -98,10 +98,14 @@ true)
 
                 int rgb = resized.getRGB(x, y);
 
+                float r = (((rgb >> 16) & 0xFF) / 255f - 0.5f) / 0.5f;
+                float gC = (((rgb >> 8) & 0xFF) / 255f - 0.5f) / 0.5f;
+                float b = ((rgb & 0xFF) / 255f - 0.5f) / 0.5f;
+                /*
                 // Extract RGB channels and normalize to [0,1]
                 float r = ((rgb >> 16) & 0xFF) / 255f;
                 float gC = ((rgb >> 8) & 0xFF) / 255f;
-                float b = (rgb & 0xFF) / 255f;
+                float b = (rgb & 0xFF) / 255f;*/
 
                 data[0][y][x] = r;   // Red channel
                 data[1][y][x] = gC;  // Green channel

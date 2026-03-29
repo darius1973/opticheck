@@ -37,6 +37,7 @@ import com.opticheck.pojo.FilePrediction;
 import javax.imageio.ImageIO;
 
 import static com.opticheck.utils.ImageDatasetLoader.loadImageAsTensor;
+import static com.opticheck.utils.ImageUtils.isImageFile;
 
 @Component
 public class PatternClassifierService {
@@ -107,7 +108,9 @@ public class PatternClassifierService {
             throw new IOException("No file found in predict folder");
         }
         for(File imgFile : Objects.requireNonNull(predictDir.listFiles())) {
-            filePredictions.add(predictSingleFile(imgFile));
+            if (isImageFile(imgFile)) {
+                filePredictions.add(predictSingleFile(imgFile));
+            }
         }
         return filePredictions;
     }
@@ -142,10 +145,26 @@ public class PatternClassifierService {
 
             NDList output = model.getBlock()
                     .forward(ps, new NDList(input), false);
-
-            return (int) output.singletonOrThrow()
-                    .argMax()
-                    .getLong(); // 0=OK, 1=NOK
+            // -- stricter rules of prediction
+            //The model produces logits (confidence scores),
+            // which are raw, unnormalized scores (not probabilities yet).
+            NDArray logits = output.singletonOrThrow();
+            // Applies Softmax function.
+            // This transforms logits into probabilities that:
+            // Are between 0 and 1
+            // Sum to 1 across classes
+            NDArray probs = logits.softmax(1);
+            // Gets the probability of class 1 (NOK).Assumes:
+            // index 0 = OK
+            // index 1 = NOK
+            float nokProb = probs.getFloat(0,1);  // class 1 = NOK
+            // stricter rule:
+            // if probability to be not OK is over 40% then is it not OK
+            if (nokProb > 0.4f) {
+                return 1; // NOK
+            } else {
+                return 0; // OK
+            }
         }
     }
 

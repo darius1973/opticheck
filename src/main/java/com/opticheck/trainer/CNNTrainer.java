@@ -50,7 +50,7 @@ public class CNNTrainer {
 
         // Learning rate schedule
         var lrTracker = Tracker.multiFactor()
-                .setBaseValue(0.001f)      // starting learning rate
+                .setBaseValue(0.0005f)      // starting learning rate
                 .optFactor(0.2f)           // multiply LR by 0.2 at steps
                 .setSteps(new int[]{5,10}) // epochs where LR drops
                 .build();
