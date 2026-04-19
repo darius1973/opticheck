@@ -1,6 +1,7 @@
 package com.opticheck.ui;
 
 import ai.djl.MalformedModelException;
+import ai.djl.ndarray.NDManager;
 import com.opticheck.interfaces.TrainingListenerUI;
 import com.opticheck.pojo.FilePrediction;
 import com.opticheck.utils.ImageDatasetLoader;
@@ -11,6 +12,7 @@ import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.Image;
 import com.vaadin.flow.component.notification.Notification;
+import com.vaadin.flow.component.notification.NotificationVariant;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.router.Route;
@@ -36,7 +38,7 @@ public class MainView extends VerticalLayout implements TrainingListenerUI {
     private static final int FIRST_CONV_FILTERS = 16;
     private static final int SECOND_CONV_FILTERS = 32;
     private static final int DENSE_NEURONS = 64;
-    private static final int OUTPUT_CLASSES = 2;
+    private static final int OUTPUT_CLASSES = 1;
 
     public MainView() {
 
@@ -52,19 +54,52 @@ public class MainView extends VerticalLayout implements TrainingListenerUI {
         predictButton.addClickListener(event -> {
             try {
                 var filePredictions = classifierService.filePredictions();
+
+                StringBuilder message = new StringBuilder();
+
                 for (FilePrediction fp : filePredictions) {
-                    String message = fp.prediction() == 0
-                            ? "Image file " + fp.fileName() + " Pattern is RIGHT - cat IN ✅"
-                            : "Image file " + fp.fileName() + " Pattern is WRONG - NO cat in ❌";
-                    Notification.show(message, 7000, Notification.Position.TOP_CENTER);
+
+                    float prob = fp.probability();
+                    int predicted = fp.predictedClass();
+
+                    String status;
+                    String icon;
+
+                    if (predicted == 0) {
+                        status = "OK";
+                        icon = "✅";
+                    } else {
+                        status = "NOT OK";
+                        icon = "❌";
+                    }
+
+                    message.append("📄 ")
+                            .append(fp.fileName())
+                            .append(" → ")
+                            .append(status)
+                            .append(" ")
+                            .append(icon)
+                            .append(" (confidence: ")
+                            .append(String.format("%.2f", prob))
+                            .append(")\n");
                 }
 
-            } catch (Exception e2) {
-                Notification.show(
-                        "Prediction failed: " + e2.getMessage(),
+                Notification notification = Notification.show(
+                        message.toString(),
+                        8000,
+                        Notification.Position.TOP_CENTER
+                );
+
+                notification.addThemeVariants(NotificationVariant.LUMO_PRIMARY);
+
+            } catch (Exception e) {
+                Notification notification = Notification.show(
+                        "Prediction failed: " + e.getMessage(),
                         5000,
                         Notification.Position.TOP_CENTER
                 );
+
+                notification.addThemeVariants(NotificationVariant.LUMO_ERROR);
             }
         });
 
@@ -119,17 +154,39 @@ public class MainView extends VerticalLayout implements TrainingListenerUI {
     }
 
     private void executeTraining() {
-        try {
-            var manager = classifierService.getManager();
+
+        try (NDManager manager = NDManager.newBaseManager()) {
+
+            if (uiRef != null) {
+                uiRef.access(() -> appendMessage("📂 Loading dataset...", false));
+            }
 
             var dataset = ImageDatasetLoader.loadDataset("training-data", manager);
-            classifierService.createCnnModel( FIRST_CONV_FILTERS, SECOND_CONV_FILTERS, DENSE_NEURONS, OUTPUT_CLASSES);
-            classifierService.train(dataset, 200);
+
+            if (uiRef != null) {
+                uiRef.access(() -> appendMessage("🧠 Creating DenseNet model...", false));
+            }
+
+            classifierService.createModel(OUTPUT_CLASSES);
+
+            if (uiRef != null) {
+                uiRef.access(() -> appendMessage("🚀 Training started...", false));
+            }
+
+            classifierService.train(dataset, 40);
+
+            if (uiRef != null) {
+                uiRef.access(() -> appendMessage("✅ Training completed!", false));
+            }
 
         } catch (Exception ex) {
             ex.printStackTrace();
+
             if (uiRef != null) {
-                uiRef.access(() -> appendMessage("ERROR: " + ex.getMessage(), true));
+                uiRef.access(() -> appendMessage(
+                        "❌ ERROR: " + ex.getMessage(),
+                        true
+                ));
             }
         }
     }
@@ -233,12 +290,25 @@ public class MainView extends VerticalLayout implements TrainingListenerUI {
 
     private void loadModel() {
         try {
-            classifierService.loadModel(FIRST_CONV_FILTERS, SECOND_CONV_FILTERS, DENSE_NEURONS, OUTPUT_CLASSES);
-            Notification.show("Model loaded!");
-        } catch (IOException ex) {
-            Notification.show("Failed to save model: " + ex.getMessage());
-        } catch (MalformedModelException e) {
-            throw new RuntimeException(e);
+            classifierService.loadModel(OUTPUT_CLASSES);
+
+            Notification notification = Notification.show(
+                    "✅ Model loaded successfully!",
+                    4000,
+                    Notification.Position.TOP_CENTER
+            );
+
+            notification.addThemeVariants(NotificationVariant.LUMO_SUCCESS);
+
+        } catch (IOException | MalformedModelException ex) {
+
+            Notification notification = Notification.show(
+                    "❌ Failed to load model: " + ex.getMessage(),
+                    5000,
+                    Notification.Position.TOP_CENTER
+            );
+
+            notification.addThemeVariants(NotificationVariant.LUMO_ERROR);
         }
     }
 }

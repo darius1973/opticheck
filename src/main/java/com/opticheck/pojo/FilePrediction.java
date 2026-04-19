@@ -1,5 +1,5 @@
 package com.opticheck.pojo;
 
 
-public record FilePrediction(String fileName, int prediction) {
+public record FilePrediction(String fileName, float probability,  int predictedClass) {
 }

@@ -2,235 +2,252 @@ package com.opticheck.service;
 
 import ai.djl.MalformedModelException;
 import ai.djl.Model;
-import ai.djl.modality.cv.ImageFactory;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
-import ai.djl.ndarray.types.DataType;
-import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.Activation;
+import ai.djl.nn.Block;
 import ai.djl.nn.Blocks;
 import ai.djl.nn.SequentialBlock;
 import ai.djl.nn.convolutional.Conv2d;
 import ai.djl.nn.core.Linear;
+import ai.djl.nn.norm.BatchNorm;
+import ai.djl.nn.norm.Dropout;
+import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.pooling.Pool;
 import ai.djl.training.ParameterStore;
 import ai.djl.training.dataset.ArrayDataset;
 import ai.djl.translate.TranslateException;
-import com.opticheck.config.DJLConfigComponent;
 import com.opticheck.trainer.CNNTrainer;
-import jakarta.annotation.PostConstruct;
+import com.opticheck.utils.ImageDatasetLoader;
 import org.springframework.stereotype.Component;
 
-import java.awt.*;
-import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.*;
+import java.util.ArrayList;
 import java.util.List;
 
 
 import com.opticheck.pojo.FilePrediction;
 
-import javax.imageio.ImageIO;
-
-import static com.opticheck.utils.ImageDatasetLoader.loadImageAsTensor;
-import static com.opticheck.utils.ImageUtils.isImageFile;
-
 @Component
 public class PatternClassifierService {
-    private final NDManager manager;
+
     private Model model;
     private final CNNTrainer trainer;
 
-    public PatternClassifierService(DJLConfigComponent djlConfig, CNNTrainer trainer) {
-        this.manager = djlConfig.getManager();
+    private static final String MODEL_NAME = "xray-model";
+
+    public PatternClassifierService(CNNTrainer trainer) {
         this.trainer = trainer;
     }
 
-    public void createCnnModel(
-            int conv1Filters,
-            int conv2Filters,
-            int denseUnits,
-            int outputClasses) {
+    // =========================================================
+    // MODEL ARCHITECTURE (shared for train + load)
+    // SequentialBlock  - is a pipeline of layers executed one after another
+    // For example: Image → Conv → ReLU → Pool → Conv → ReLU → Dense → Output
+    // So this is stack of operations the NN does
+    // NN structure
+    // Input (3,224,224)
+    // → Conv(32)
+    // → Pool
+    // → Conv(64)
+    // → Pool
+    // → Conv(128)
+    // → Pool
+    // → Flatten
+    // → Dense(256)
+    // → Dense(1)
+    // =========================================================
+    private SequentialBlock buildModel(int outputClasses) {
 
-        Model model = Model.newInstance("opticheck-cnn");
-
-        SequentialBlock block = new SequentialBlock();
-
-        block
-                // Conv block 1
-                .add(Conv2d.builder()
-                        .setFilters(conv1Filters)
-                        .setKernelShape(new Shape(3,3))
-                        .optPadding(new Shape(1,1))
-                        .build())
+        return new SequentialBlock()
+                // apply filters
+                .add(createBackbone())
+                //then flatten-ize
+                .add(Blocks.batchFlattenBlock())
+                //then dense layers
+                .add(Linear.builder().setUnits(256).build())
                 .add(Activation.reluBlock())
-                .add(Pool.maxPool2dBlock(new Shape(2,2)))
+                //and the output
+                .add(Linear.builder().setUnits(outputClasses).build());
+    }
+
+    private Block createBackbone() {
+        // layer stack:
+        // Conv1 → edges
+        // Conv2 → shapes
+        // Conv3 → structures
+        // Dense → decision
+        return new SequentialBlock()
+                // Conv block 1
+                // scan the image with 32 different 3×3 detectors and produce 32 feature maps
+                .add(Conv2d.builder()
+                        .setFilters(32) // -> 32 3x3 detectors
+                        .setKernelShape(new Shape(3, 3)) // -> what it looks at : 3 x 3 window
+                        .optPadding(new Shape(1, 1)) // -> don't shrink the image
+                        .build())
+                .add(Activation.reluBlock()) //apply ReLu activation - for non-linearity
+                .add(Pool.maxPool2dBlock(new Shape(2, 2)))
 
                 // Conv block 2
+                // scan the image with 64 different 3×3 detectors
                 .add(Conv2d.builder()
-                        .setFilters(conv2Filters)
-                        .setKernelShape(new Shape(3,3))
-                        .optPadding(new Shape(1,1))
+                        .setFilters(64)
+                        .setKernelShape(new Shape(3, 3))
+                        .optPadding(new Shape(1, 1))
                         .build())
                 .add(Activation.reluBlock())
-                .add(Pool.maxPool2dBlock(new Shape(2,2)))
+                .add(Pool.maxPool2dBlock(new Shape(2, 2)))
 
-                // Classifier
-                .add(Blocks.batchFlattenBlock())
-                .add(Linear.builder().setUnits(denseUnits).build())
+                // Conv block 3
+                // scan the image with 128 different 3×3 detectors
+                .add(Conv2d.builder()
+                        .setFilters(128)
+                        .setKernelShape(new Shape(3, 3))
+                        .optPadding(new Shape(1, 1))
+                        .build())
                 .add(Activation.reluBlock())
+                .add(Pool.maxPool2dBlock(new Shape(2, 2)));
 
-                // Output layer
-                .add(Linear.builder().setUnits(outputClasses).build());
-
-        model.setBlock(block);
-        this.model = model;
     }
 
-    // ----------------------
-    // TRAINING
-    // ----------------------
-    public void train(ArrayDataset dataset, int epochs) throws IOException, TranslateException {
-        trainer.train(this.model,dataset,epochs);
-        Files.list(Paths.get("models")).forEach(p -> p.toFile().delete());
-        model.save(Paths.get("models"), "opticheck-cnn");
+    // =========================================================
+    // CREATE MODEL (before training)
+    // =========================================================
+    public void createModel(int outputClasses) {
+
+        Model m = Model.newInstance(MODEL_NAME);
+        m.setBlock(buildModel(outputClasses));
+
+        this.model = m;
     }
 
+    // =========================================================
+    // TRAIN + SAVE
+    // =========================================================
+    public void train(ArrayDataset dataset, int epochs)
+            throws IOException, TranslateException {
 
+        trainer.train(model, dataset, epochs);
+
+        model.save(Paths.get("models"), MODEL_NAME);
+    }
+
+    // =========================================================
+    // LOAD MODEL (after restart)
+    // =========================================================
+    public void loadModel(int outputClasses)
+            throws IOException, MalformedModelException {
+
+        Model m = Model.newInstance(MODEL_NAME);
+
+        m.setBlock(buildModel(outputClasses));
+
+        m.load(Paths.get("models"), MODEL_NAME);
+
+        this.model = m;
+    }
+
+    // =========================================================
+    // PREDICT MULTIPLE FILES
+    // =========================================================
     public List<FilePrediction> filePredictions() throws IOException, TranslateException {
-        List<FilePrediction> filePredictions = new ArrayList<>();
-        var predictDir = new File("predict");
-        if(Arrays.stream(Objects.requireNonNull(predictDir.listFiles())).toList().isEmpty()) {
-            throw new IOException("No file found in predict folder");
+
+        File dir = new File("predict");
+
+        File[] files = dir.listFiles();
+        if (files == null || files.length == 0) {
+            throw new IOException("No image files found in predict folder");
         }
-        for(File imgFile : Objects.requireNonNull(predictDir.listFiles())) {
-            if (isImageFile(imgFile)) {
-                filePredictions.add(predictSingleFile(imgFile));
+
+        List<FilePrediction> results = new ArrayList<>();
+
+        for (File file : files) {
+            if (isImageFile(file)) {
+                results.add(predictSingleFile(file));
             }
         }
-        return filePredictions;
+
+        return results;
     }
 
-
-
-    // ----------------------
-    // PREDICT FROM FILE
-    // ----------------------
+    // =========================================================
+    // PREDICT SINGLE FILE
+    // =========================================================
     public FilePrediction predictSingleFile(File imageFile) throws IOException {
-
-        // Convert file → float[3][64][64]
-        float[][][] image = loadImageAsTensor(imageFile);
-
-        int predictedClass = cnnPredict(model, image);
-
-        return new FilePrediction(imageFile.getName(), predictedClass);
-    }
-
-
-
-    private int cnnPredict(Model model, float[][][] image) {
 
         try (NDManager manager = NDManager.newBaseManager()) {
 
-            float[] flat = flattenImage(image);
+            NDArray image = ImageDatasetLoader.loadImageAsNDArray(imageFile, manager);
 
-            NDArray input = manager.create(flat)
-                    .reshape(1, 3, 64, 64); // CNN tensor
+            float prob = predict(image, manager);
 
-            ParameterStore ps = new ParameterStore(manager, false);
+            // -----------------------
+            // THRESHOLDS (tunable)
+            // -----------------------
+            float low = 0.4f;
+            float high = 0.7f;
 
-            NDList output = model.getBlock()
-                    .forward(ps, new NDList(input), false);
-            // -- stricter rules of prediction
-            //The model produces logits (confidence scores),
-            // which are raw, unnormalized scores (not probabilities yet).
-            NDArray logits = output.singletonOrThrow();
-            // Applies Softmax function.
-            // This transforms logits into probabilities that:
-            // Are between 0 and 1
-            // Sum to 1 across classes
-            NDArray probs = logits.softmax(1);
-            // Gets the probability of class 1 (NOK).Assumes:
-            // index 0 = OK
-            // index 1 = NOK
-            float nokProb = probs.getFloat(0,1);  // class 1 = NOK
-            // stricter rule:
-            // if probability to be not OK is over 40% then is it not OK
-            if (nokProb > 0.4f) {
-                return 1; // NOK
+            int predictedClass;
+            String confidenceLabel;
+
+            if (prob < low) {
+                predictedClass = 0; // OK
+                confidenceLabel = "CONFIDENT OK";
+            } else if (prob > high) {
+                predictedClass = 1; // NOT OK
+                confidenceLabel = "CONFIDENT NOT OK";
             } else {
-                return 0; // OK
+                predictedClass = 1; // or 0 depending on strategy
+                confidenceLabel = "UNCERTAIN";
             }
+
+            // -----------------------
+            // DEBUG LOG (IMPORTANT)
+            // -----------------------
+            System.out.println(
+                    imageFile.getName() +
+                            " → prob=" + prob +
+                            " → " + confidenceLabel
+            );
+
+
+            return new FilePrediction(
+                    imageFile.getName(),
+                    prob,
+                    prob > 0.7f ? 1 : 0
+            );
         }
     }
 
-    private float[] flattenImage(float[][][] image) {
+    // =========================================================
+    // CORE INFERENCE
+    // =========================================================
+    private float predict(NDArray image, NDManager manager) {
 
-        int c = image.length;
-        int h = image[0].length;
-        int w = image[0][0].length;
+        NDArray input = image.expandDims(0);
 
-        float[] flat = new float[c * h * w];
+        ParameterStore ps = new ParameterStore(manager, false);
 
-        int idx = 0;
+        NDArray logits = model.getBlock()
+                .forward(ps, new NDList(input), false)
+                .singletonOrThrow();
 
-        for (int ch = 0; ch < c; ch++)
-            for (int y = 0; y < h; y++)
-                for (int x = 0; x < w; x++)
-                    flat[idx++] = image[ch][y][x];
+        // sigmoid (stable for binary classification)
+        NDArray probs = logits.exp().div(logits.exp().add(1));
 
-        return flat;
+        return probs.getFloat(0);
     }
 
     public Model getModel() {
         return model;
     }
 
-    @PostConstruct
-    public NDManager getManager() {
-        return manager;
+    // optional helper if you use it
+    private boolean isImageFile(File file) {
+        String name = file.getName().toLowerCase();
+        return name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg");
     }
-
-    public void loadModel(int firstConvFilters, int secondConvFilters, int denseNeurons, int outputClasses) throws IOException, MalformedModelException {
-
-        Model modelToLoad = Model.newInstance("opticheck-cnn");
-
-        // Rebuild SAME CNN architecture used during training
-        SequentialBlock block = new SequentialBlock();
-
-        block
-                .add(Conv2d.builder()
-                        .setFilters(firstConvFilters)
-                        .setKernelShape(new Shape(3, 3))
-                        .optPadding(new Shape(1, 1))
-                        .build())
-                .add(Activation.reluBlock())
-                .add(Pool.maxPool2dBlock(new Shape(2, 2)))
-
-                .add(Conv2d.builder()
-                        .setFilters(secondConvFilters)
-                        .setKernelShape(new Shape(3, 3))
-                        .optPadding(new Shape(1, 1))
-                        .build())
-                .add(Activation.reluBlock())
-                .add(Pool.maxPool2dBlock(new Shape(2, 2)))
-
-                .add(Blocks.batchFlattenBlock())
-                .add(Linear.builder().setUnits(denseNeurons).build())
-                .add(Activation.reluBlock())
-                .add(Linear.builder().setUnits(outputClasses).build());
-
-        modelToLoad.setBlock(block);
-
-        // Load weights from file
-        modelToLoad.load(Paths.get("models"), "opticheck-cnn");
-
-        this.model = modelToLoad;
-    }
-
 }
-

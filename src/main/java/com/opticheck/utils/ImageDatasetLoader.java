@@ -2,6 +2,8 @@ package com.opticheck.utils;
 
 
 import ai.djl.ndarray.NDArray;
+import ai.djl.ndarray.NDArrays;
+import ai.djl.ndarray.NDList;
 import ai.djl.ndarray.NDManager;
 import ai.djl.training.dataset.ArrayDataset;
 
@@ -15,104 +17,100 @@ import java.util.List;
 
 public class ImageDatasetLoader {
 
-    private static final int WIDTH = 64;
-    private static final int HEIGHT = 64;
+    private static final int WIDTH = 224;
+    private static final int HEIGHT = 224;
 
+    // =========================
+    // MAIN LOADER
+    // =========================
     public static ArrayDataset loadDataset(String baseDir, NDManager manager) throws IOException {
 
-        List<float[][][]> dataList = new ArrayList<>();
-        List<Integer> labelList = new ArrayList<>();
+        List<NDArray> dataList = new ArrayList<>();
+        List<NDArray> labelList = new ArrayList<>();
 
         File okDir = new File(baseDir, "ok");
         File nokDir = new File(baseDir, "notok");
 
-        loadImagesFromDir(okDir, 0, dataList, labelList);
-        loadImagesFromDir(nokDir, 1, dataList, labelList);
+        loadImagesFromDir(okDir, 0f, manager, dataList, labelList);
+        loadImagesFromDir(nokDir, 1f, manager, dataList, labelList);
 
-        // Convert list → 4D array
-        float[][][][] data = dataList.toArray(new float[0][][][]);
-        int[] labels = labelList.stream().mapToInt(i -> i).toArray();
-
-        int N = dataList.size();
-
-        float[] flat = new float[N * 3 * 64 * 64];
-
-        int idx = 0;
-
-        for (float[][][] img : dataList) {
-            for (int c = 0; c < 3; c++) {
-                for (int y = 0; y < 64; y++) {
-                    for (int x = 0; x < 64; x++) {
-                        flat[idx++] = img[c][y][x];
-                    }
-                }
-            }
-        }
-
-        // Create NDArray and reshape to CNN format
-        NDArray X = manager.create(flat)
-                .reshape(N, 3, 64, 64);
-
-        NDArray y = manager.create(labels); // shape (N)
+        NDArray X = NDArrays.stack(new NDList(dataList));
+        NDArray y = NDArrays.stack(new NDList(labelList));
 
         return new ArrayDataset.Builder()
                 .setData(X)
                 .optLabels(y)
-                .setSampling(32,
-true)
+                .setSampling(32, true)
                 .build();
     }
 
-    private static void loadImagesFromDir(File dir,
-                                          int label,
-                                          List<float[][][]> dataList,
-                                          List<Integer> labelList) throws IOException {
+    // =========================
+    // DIRECTORY LOADER
+    // =========================
+    private static void loadImagesFromDir(
+            File dir,
+            float label,
+            NDManager manager,
+            List<NDArray> dataList,
+            List<NDArray> labelList) throws IOException {
 
-        for (File file : dir.listFiles()) {
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        System.out.println("count " + label + " " + files.length);
+        for (File file : files) {
 
-            if (!file.getName().endsWith(".jpg") && !file.getName().endsWith(".png"))
+            if (!file.getName().endsWith(".jpg") &&
+                    !file.getName().endsWith(".jpeg") &&
+                    !file.getName().endsWith(".png")) {
                 continue;
+            }
 
-            float[][][] image = loadImageAsTensor(file); // 👈 IMPORTANT
+            NDArray image = loadImageAsNDArray(file, manager);
 
             dataList.add(image);
-            labelList.add(label);
+            labelList.add(manager.create(new float[]{label}));
         }
     }
 
-    public static float[][][] loadImageAsTensor(File file) throws IOException {
+    // =========================
+    // IMAGE → NDARRAY
+    // =========================
+    public static NDArray loadImageAsNDArray(File file, NDManager manager) throws IOException {
 
         BufferedImage img = ImageIO.read(file);
 
-        // Resize to 64x64
-        BufferedImage resized = new BufferedImage(64, 64, BufferedImage.TYPE_INT_RGB);
+        // Resize
+        BufferedImage resized = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = resized.createGraphics();
-        g.drawImage(img, 0, 0, 64, 64, null);
+        g.drawImage(img, 0, 0, WIDTH, HEIGHT, null);
         g.dispose();
 
-        // [channels][height][width]
-        float[][][] data = new float[3][64][64];
+        float[] data = new float[3 * WIDTH * HEIGHT];
 
-        for (int y = 0; y < 64; y++) {
-            for (int x = 0; x < 64; x++) {
+        int idx = 0;
 
-                int rgb = resized.getRGB(x, y);
+        // CHW format (IMPORTANT for DJL + CNNs)
+        for (int c = 0; c < 3; c++) {
+            for (int y = 0; y < HEIGHT; y++) {
+                for (int x = 0; x < WIDTH; x++) {
 
-                float r = (((rgb >> 16) & 0xFF) / 255f - 0.5f) / 0.5f;
-                float gC = (((rgb >> 8) & 0xFF) / 255f - 0.5f) / 0.5f;
-                float b = ((rgb & 0xFF) / 255f - 0.5f) / 0.5f;
-                /*
-                // Extract RGB channels and normalize to [0,1]
-                float r = ((rgb >> 16) & 0xFF) / 255f;
-                float gC = ((rgb >> 8) & 0xFF) / 255f;
-                float b = (rgb & 0xFF) / 255f;*/
+                    int rgb = resized.getRGB(x, y);
 
-                data[0][y][x] = r;   // Red channel
-                data[1][y][x] = gC;  // Green channel
-                data[2][y][x] = b;   // Blue channel
+                    float value;
+                    switch (c) {
+                        case 0 -> value = ((rgb >> 16) & 0xFF);
+                        case 1 -> value = ((rgb >> 8) & 0xFF);
+                        default -> value = (rgb & 0xFF);
+                    }
+
+                    // Normalize for pretrained models (important for DenseNet)
+                    value = (value / 255f);
+
+                    data[idx++] = value;
+                }
             }
         }
 
-        return data;
+        return manager.create(data).reshape(3, HEIGHT, WIDTH);
     }
 }
